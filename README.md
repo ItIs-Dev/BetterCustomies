@@ -4,7 +4,6 @@
 
 A PocketMine-MP plugin that implements support for custom blocks, items and entities.
 
-``More support for PocketMine-MP.``
 ## Community
 
 <a href="https://discord.gg/Tm6wGxWqgh"><img src="https://img.shields.io/discord/989466131305754625?label=discord&color=7289DA&logo=discord" alt="Discord" /></a>
