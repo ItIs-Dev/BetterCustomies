@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace customiesdevs\customies\item\component;
 
+use Exception;
 use pocketmine\block\Block;
 use function array_map;
 use function implode;
@@ -364,21 +365,23 @@ function getDiamondTier() {
 final class MiningSpeedComponent implements ItemComponent {
 
 	private array $destroySpeeds;
-	private const TOOL_TYPES = ["wood", "stone", "iron", "gold", "diamond"];
+	private const TOOL_TYPES = [
+        "wood" => getWoodTier(), 
+        "stone" => getStoneTier(), 
+        "iron" => getIronTier(), 
+        "gold" => getGoldTier(), 
+        "diamond" => getDiamondTier()
+    ];
 	
-        public function __construct(private string $toolType = "wood", private int $mspeed) {
-		if (!in_array($this->toolType, self::TOOL_TYPES)) {
-			throw new Exception('Tool type not listed, default is wood!');
-		}
-
-		if ($this->toolType === self::TOOL_TYPES[0]) $this->withBlocks($this->mspeed, getWoodTier());
-		if ($this->toolType === self::TOOL_TYPES[1]) $this->withBlocks($this->mspeed, getStoneTier());
-		if ($this->toolType === self::TOOL_TYPES[2]) $this->withBlocks($this->mspeed, getIronTier());
-		if ($this->toolType === self::TOOL_TYPES[3]) $this->withBlocks($this->mspeed, getGoldTier());
-		if ($this->toolType === self::TOOL_TYPES[4]) $this->withBlocks($this->mspeed, getDiamondTier());
-		
-                $this->withTags($this->mspeed, 'metal', $this->toolType.'_pick_diggable');
+    public function __construct(private string $toolType = "wood", private int $mspeed) {
+        if (!in_array($this->toolType, self::TOOL_TYPES)) {
+            throw new Exception('Tool type not listed, default is wood!');
         }
+
+        $this->withBlocks($this->mspeed, self::TOOL_TYPES[$toolType]);
+            
+        $this->withTags($this->mspeed, 'metal', $this->toolType.'_pick_diggable');
+    }
   
 	public function getName(): string {
 		return "minecraft:digger";

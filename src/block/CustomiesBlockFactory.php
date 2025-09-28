@@ -17,12 +17,16 @@ use pocketmine\block\RuntimeBlockStateRegistry;
 use pocketmine\data\bedrock\block\BlockStateData;
 use pocketmine\data\bedrock\block\convert\BlockStateReader;
 use pocketmine\data\bedrock\block\convert\BlockStateWriter;
+use pocketmine\inventory\CreativeCategory;
+use pocketmine\inventory\CreativeGroup;
 use pocketmine\inventory\CreativeInventory;
+use pocketmine\lang\Translatable;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\network\mcpe\protocol\types\BlockPaletteEntry;
 use pocketmine\network\mcpe\protocol\types\CacheableNbt;
 use pocketmine\Server;
+use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\SingletonTrait;
 use pocketmine\world\format\io\GlobalBlockStateHandlers;
 use function array_map;
@@ -43,6 +47,7 @@ final class CustomiesBlockFactory {
 	private array $blockPaletteEntries = [];
 	/** @var array<string, Block> */
 	private array $customBlocks = [];
+	private array $groups = [];
 
 	/**
 	 * Adds a worker initialize hook to the async pool to sync the BlockFactory for every thread worker that is created.
@@ -67,6 +72,18 @@ final class CustomiesBlockFactory {
 		);
 	}
 
+	private function loadGroups() : void {
+		if($this->groups !== []){
+			return;
+		}
+		foreach(CreativeInventory::getInstance()->getAllEntries() as $entry){
+			$group = $entry->getGroup();
+			if($group !== null){
+				$this->groups[$group->getName()->getText()] = $group;
+			}
+		}
+	}
+
 	/**
 	 * Returns all the block palette entries that need to be sent to the client.
 	 * @return BlockPaletteEntry[]
@@ -82,7 +99,7 @@ final class CustomiesBlockFactory {
 	 * @phpstan-param null|(Closure(BlockStateWriter): Block) $serializer
 	 * @phpstan-param null|(Closure(Block): BlockStateReader) $deserializer
 	 */
-	public function registerBlock(Closure $blockFunc, string $identifier, ?Model $model = null, ?CreativeInventoryInfo $creativeInfo = null, ?Closure $serializer = null, ?Closure $deserializer = null): void {
+	public function registerBlock(Closure $blockFunc, string $identifier, ?CreativeInventoryInfo $creativeInfo = null, ?Closure $serializer = null, ?Closure $deserializer = null): void {
 		$block = $blockFunc();
 		if(!$block instanceof Block) {
 			throw new InvalidArgumentException("Class returned from closure is not a Block");
@@ -93,19 +110,10 @@ final class CustomiesBlockFactory {
 		$this->customBlocks[$identifier] = $block;
 
 		$propertiesTag = CompoundTag::create();
-		$components = CompoundTag::create()
-			->setTag("minecraft:light_emission", CompoundTag::create()
-				->setByte("emission", $block->getLightLevel()))
-			->setTag("minecraft:light_dampening", CompoundTag::create()
-				->setByte("lightLevel", $block->getLightFilter()))
-			->setTag("minecraft:destructible_by_mining", CompoundTag::create()
-				->setFloat("value", $block->getBreakInfo()->getHardness()))
-			->setTag("minecraft:friction", CompoundTag::create()
-				->setFloat("value", 1 - $block->getFrictionFactor()));
-
-		if($model !== null) {
-			foreach($model->toNBT() as $tagName => $tag){
-				$components->setTag($tagName, $tag);
+		$components = CompoundTag::create();
+		if($block instanceof BlockComponents) {
+			foreach ($block->getComponents() as $component) {
+				$components->setTag($component->getName(), $component->getValue());
 			}
 		}
 
@@ -162,9 +170,6 @@ final class CustomiesBlockFactory {
 		GlobalBlockStateHandlers::getDeserializer()->map($identifier, $deserializer);
 
 		$creativeInfo ??= CreativeInventoryInfo::DEFAULT();
-		$components->setTag("minecraft:creative_category", CompoundTag::create()
-			->setString("category", $creativeInfo->getCategory())
-			->setString("group", $creativeInfo->getGroup()));
 		$propertiesTag
 			->setTag("components",
 				$components->setTag("minecraft:creative_category", CompoundTag::create()
@@ -175,7 +180,31 @@ final class CustomiesBlockFactory {
 				->setString("group", $creativeInfo->getGroup() ?? ""))
 			->setInt("molangVersion", 1);
 
-		CreativeInventory::getInstance()->add($block->asItem());
+		if($creativeInfo !== null){
+			$this->loadGroups();
+			if($creativeInfo->getCategory() === CreativeInventoryInfo::CATEGORY_ALL || $creativeInfo->getCategory() === CreativeInventoryInfo::CATEGORY_COMMANDS){
+				return;
+			}
+
+			$group = $this->groups[$creativeInfo->getGroup()] ?? ($creativeInfo->getGroup() !== "" && $creativeInfo->getGroup() !== CreativeInventoryInfo::NONE ? new CreativeGroup(
+				new Translatable($creativeInfo->getGroup()),
+				$block->asItem()
+			) : null);
+
+			if($group !== null){
+				$this->groups[$group->getName()->getText()] = $group;
+			}
+
+			$category = match ($creativeInfo->getCategory()) {
+				CreativeInventoryInfo::CATEGORY_CONSTRUCTION => CreativeCategory::CONSTRUCTION,
+				CreativeInventoryInfo::CATEGORY_ITEMS => CreativeCategory::ITEMS,
+				CreativeInventoryInfo::CATEGORY_NATURE => CreativeCategory::NATURE,
+				CreativeInventoryInfo::CATEGORY_EQUIPMENT => CreativeCategory::EQUIPMENT,
+				default => throw new AssumptionFailedError("Unknown category")
+			};
+
+			CreativeInventory::getInstance()->add($block->asItem(), $category, $group);
+		}
 
 		$this->blockPaletteEntries[] = new BlockPaletteEntry($identifier, new CacheableNbt($propertiesTag));
 		$this->blockFuncs[$identifier] = [$blockFunc, $serializer, $deserializer];
