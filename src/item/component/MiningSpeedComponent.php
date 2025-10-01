@@ -372,6 +372,12 @@ final class MiningSpeedComponent implements ItemComponent {
         "gold" => getGoldTier(), 
         "diamond" => getDiamondTier()
     ];
+
+    const WOOD = "wood";
+    const STONE = "stone";
+    const IRON = "iron";
+    const GOLD = "gold";
+    const DIAMOND = "diamond";
 	
     public function __construct(private string $toolType = "wood", private int $mspeed) {
         if (!in_array($this->toolType, self::TOOL_TYPES)) {
